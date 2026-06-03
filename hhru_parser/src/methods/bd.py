@@ -1,7 +1,6 @@
 import sqlite3
 from datetime import datetime
-from typing import List, Dict, Optional
-import json
+from typing import List, Dict
 
 class Database:
     def __init__(self, db_path="vacancies.db"):
@@ -17,6 +16,7 @@ class Database:
                     title TEXT,
                     company TEXT,
                     salary TEXT,
+                    city TEXT,
                     url TEXT,
                     responses INTEGER,
                     work_format TEXT,
@@ -31,13 +31,14 @@ class Database:
             for vac in vacancies:
                 self.conn.execute("""
                     INSERT OR REPLACE INTO vacancies 
-                    (query, title, company, salary, url, responses, work_format, description, parsed_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (query, title, company, salary, city, url, responses, work_format, description, parsed_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     query,
                     vac.get('title'),
                     vac.get('company'),
                     vac.get('salary'),
+                    vac.get('city'),
                     vac.get('url'),
                     vac.get('responses', 0),
                     vac.get('work_format', 'Не указан'),
@@ -50,4 +51,9 @@ class Database:
             "SELECT * FROM vacancies WHERE query = ? ORDER BY parsed_at DESC",
             (query,)
         )
-        return [dict(row) for row in cursor.fetchall()]
+        rows = cursor.fetchall()
+        columns = [description[0] for description in cursor.description]
+        return [dict(zip(columns, row)) for row in rows]
+    
+    def close(self):
+        self.conn.close()
