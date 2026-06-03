@@ -216,3 +216,26 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project specific
+vacancies.db
+vacancies.db-journal
+*.sqlite
+*.sqlite3
+
+# Parser cache
+*.html
+*.json
+.cache/
+
+# Temporary files
+temp_*
+*.tmp
+
+# OS specific (у вас уже есть .DS_Store, но добавим ещё)
+Thumbs.db
+desktop.ini
+
+# Logs from your parser
+parsing_errors.log
+requests_log.txt
