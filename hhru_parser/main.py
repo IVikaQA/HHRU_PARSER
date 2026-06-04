@@ -1,10 +1,9 @@
 import argparse
 import asyncio
-from hhru_parser.src.methods.hhtp import HHParser
-from hhru_parser.src.methods.db import Database
+from hhru_parser.src.methods.hh_pars import HHParser      
+from hhru_parser.src.methods.bd import Database           
 from tqdm import tqdm
 from collections import Counter
-from dataclasses import dataclass
 import matplotlib.pyplot as plt
 import sys
 
@@ -12,27 +11,29 @@ def main():
     parser = argparse.ArgumentParser(description='Парсер вакансий hh.ru')
     parser.add_argument('query', type=str, help='Поисковый запрос (например: "ML Engineer AND NLP")')
     parser.add_argument('--pages', type=int, default=1, help='Количество страниц для парсинга')
+    parser.add_argument('--per-page', type=int, default=5, help='Вакансий на странице (топ-N)')
     parser.add_argument('--stats', action='store_true', help='Показать статистику')
-    parser.add_argument('--plot', action='store_true', help='Построить графики')
+    parser.add_argument('--grafik', action='store_true', help='Построить график топ-10 компаний')
     parser.add_argument('--no-cache', action='store_true', help='Не использовать кеш')
     
     args = parser.parse_args()
     
     # Запуск парсера
-    vacancies = asyncio.run(run_parser(args.query, args.pages, args.no_cache))
+    vacancies = asyncio.run(run_parser(args.query, args.pages, args.per_page, args.no_cache))
     
     if not vacancies:
-        print("❌ Вакансии не найдены")
+        print("Вакансии не найдены")
         sys.exit(1)
     
-    print(f"\n✅ Найдено вакансий: {len(vacancies)}")
+    print(f"\n Найдено вакансий: {len(vacancies)}")
     
     # Показываем топ-5
-    print("\n📋 ТОП-5 ВАКАНСИЙ:")
+    print("\n ТОП-5 ВАКАНСИЙ:")
     for i, vac in enumerate(vacancies[:5], 1):
         print(f"\n{i}. {vac.get('title', 'Нет названия')}")
         print(f"   Компания: {vac.get('company', 'Не указана')}")
         print(f"   Зарплата: {vac.get('salary', 'Не указана')}")
+        print(f"   Город: {vac.get('city', 'Не указан')}")
         print(f"   Откликов: {vac.get('responses', 0)}")
         print(f"   Формат: {vac.get('work_format', 'Не указан')}")
     
@@ -47,32 +48,39 @@ def main():
                 stats.companies[vac['company']] += 1
             if vac.get('work_format'):
                 stats.work_formats[vac['work_format']] += 1
+            if vac.get('city'):
+                stats.cities[vac['city']] += 1
         
         stats.calculate_salary_ranges(vacancies)
         stats.calculate_avg_responses(vacancies)
         
-        print(f"\n📊 РАСШИРЕННАЯ СТАТИСТИКА:")
+        print(f"\n РАСШИРЕННАЯ СТАТИСТИКА:")
         print(f"Всего вакансий: {stats.total_count}")
-        print(f"\nТоп 5 компаний:")
+        
+        print(f"\n Топ 5 компаний:")
         for company, count in stats.companies.most_common(5):
             print(f"  • {company}: {count} вакансий")
         
-        print(f"\nРаспределение зарплат:")
+        print(f"\n Распределение зарплат:")
         for range_name, count in stats.salary_ranges.items():
             if count > 0:
                 print(f"  • {range_name}: {count} вакансий")
         
-        print(f"\nФорматы работы:")
+        print(f"\n Форматы работы:")
         for format_name, count in stats.work_formats.most_common():
             print(f"  • {format_name}: {count} вакансий")
         
-        print(f"\nСреднее количество откликов: {stats.avg_responses:.1f}")
+        print(f"\n Топ 3 города:")
+        for city, count in stats.cities.most_common(3):
+            print(f"  • {city}: {count} вакансий")
+        
+        print(f"\n Среднее количество откликов: {stats.avg_responses:.1f}")
     
-    # Графики
-    if args.plot:
-        plot_statistics(vacancies)
+    # График
+    if args.grafik:
+        grafik_companies_chart(vacancies)
 
-async def run_parser(query: str, pages: int, no_cache: bool):
+async def run_parser(query: str, pages: int, per_page: int, no_cache: bool):
     """Запуск парсера с кешированием"""
     db = Database()
     
@@ -80,9 +88,10 @@ async def run_parser(query: str, pages: int, no_cache: bool):
     if not no_cache:
         cached = db.get_cached_vacancies(query)
         if cached:
-            print(f"📦 Найдено {len(cached)} вакансий в кеше")
+            print(f" Найдено {len(cached)} вакансий в кеше")
             use_cache = input("Использовать кеш? (y/n): ").lower() == 'y'
             if use_cache:
+                db.close()
                 return cached
     
     # Парсим новые вакансии
@@ -91,60 +100,60 @@ async def run_parser(query: str, pages: int, no_cache: bool):
     
     with tqdm(total=pages, desc="Парсинг страниц") as pbar:
         for page in range(pages):
-            page_vacancies = await parser.search_vacancies(query, start_page=page, per_page=1)
+            page_vacancies = await parser.search_vacancies(query, page_num=page, per_page=per_page)
             vacancies.extend(page_vacancies)
             pbar.update(1)
     
     # Сохраняем в БД
     if vacancies:
         db.save_vacancies(query, vacancies)
-        print(f"💾 Сохранено {len(vacancies)} вакансий в базу данных")
+        print(f" Сохранено {len(vacancies)} вакансий в базу данных")
     
+    db.close()
     return vacancies
 
-def plot_statistics(vacancies: list):
-    """Построение расширенных графиков"""
-    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+def grafik_companies_chart(vacancies: list):
+    """Построение графика топ-10 компаний"""
     
-    # 1. Топ компаний
-    companies = [vac.get('company', 'Unknown') for vac in vacancies if vac.get('company')]
+    # Собираем компании (исключая "Не указано")
+    companies = [vac.get('company', '') for vac in vacancies 
+                if vac.get('company') and vac.get('company') != "Не указано"]
+    
+    if not companies:
+        print("\n Нет данных о компаниях для построения графика")
+        return
+    
+    # Подсчитываем количество вакансий по компаниям
     company_counts = Counter(companies)
     top_companies = dict(company_counts.most_common(10))
     
-    axes[0, 0].barh(list(top_companies.keys()), list(top_companies.values()))
-    axes[0, 0].set_xlabel('Количество вакансий')
-    axes[0, 0].set_title('Топ-10 компаний по количеству вакансий')
+    # Создаем график
+    plt.figure(figsize=(12, 8))
     
-    # 2. Распределение откликов
-    responses = [vac.get('responses', 0) for vac in vacancies]
-    axes[0, 1].hist(responses, bins=20, edgecolor='black')
-    axes[0, 1].set_xlabel('Количество откликов')
-    axes[0, 1].set_ylabel('Количество вакансий')
-    axes[0, 1].set_title('Распределение откликов на вакансии')
+    # Строим горизонтальную гистограмму
+    bars = plt.barh(list(top_companies.keys()), list(top_companies.values()))
     
-    # 3. Форматы работы
-    formats = [vac.get('work_format', 'Не указан') for vac in vacancies]
-    format_counts = Counter(formats)
-    axes[1, 0].pie(format_counts.values(), labels=format_counts.keys(), autopct='%1.1f%%')
-    axes[1, 0].set_title('Форматы работы')
+    # Настройка внешнего вида
+    plt.xlabel('Количество вакансий', fontsize=12)
+    plt.ylabel('Компании', fontsize=12)
+    plt.title(f'Топ-10 компаний по количеству вакансий\n(всего вакансий: {len(vacancies)})', 
+              fontsize=14, fontweight='bold')
     
-    # 4. Зарплаты по компаниям (топ-5)
-    top5_companies = [c for c, _ in company_counts.most_common(5)]
-    salaries_by_company = defaultdict(list)
+    # Добавляем значения на бары
+    for i, (company, count) in enumerate(top_companies.items()):
+        plt.text(count + 0.2, i, str(count), va='center', fontsize=10)
     
-    for vac in vacancies:
-        if vac.get('company') in top5_companies:
-            salary = vac.get('salary', '')
-            import re
-            numbers = re.findall(r'\d+', salary)
-            if numbers:
-                salaries_by_company[vac['company']].append(int(numbers[0]))
+    # Раскрашиваем бары
+    colors = plt.cm.Set3(range(len(top_companies)))
+    for bar, color in zip(bars, colors):
+        bar.set_color(color)
     
-    if salaries_by_company:
-        axes[1, 1].boxplot(salaries_by_company.values(), labels=salaries_by_company.keys())
-        axes[1, 1].set_ylabel('Зарплата (тыс. руб)')
-        axes[1, 1].set_title('Распределение зарплат по компаниям')
-        axes[1, 1].tick_params(axis='x', rotation=45)
+    # Настраиваем сетку
+    plt.grid(True, alpha=0.3, axis='x')
+    
+    # Убираем верхнюю и правую границу
+    plt.gca().spines['top'].set_visible(False)
+    plt.gca().spines['right'].set_visible(False)
     
     plt.tight_layout()
     plt.show()

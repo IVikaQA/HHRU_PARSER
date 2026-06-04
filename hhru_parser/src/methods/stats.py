@@ -5,9 +5,9 @@ import re
 
 @dataclass
 class VacancyStats:
-    total_count: int = 0
-    companies: Counter = field(default_factory=Counter)
-    cities: Counter = field(default_factory=Counter)
+    total_count_vacancies: int = 0 
+    companies: Counter = field(default_factory=Counter) #счетчик компаний (сколько вакансий у каждой)
+    cities: Counter = field(default_factory=Counter) 
     salary_ranges: dict = field(default_factory=dict)
     work_formats: Counter = field(default_factory=Counter)
     avg_responses: float = 0

@@ -3,10 +3,12 @@ from datetime import datetime
 from typing import List, Dict
 
 class Database:
+    #Инициализация подключения к БД
     def __init__(self, db_path="vacancies.db"):
-        self.conn = sqlite3.connect(db_path)
+        self.conn = sqlite3.connect(db_path) 
         self.init_db()
     
+    #Создание таблицы для хранения вакансий
     def init_db(self):
         with self.conn:
             self.conn.execute("""
@@ -25,7 +27,7 @@ class Database:
                     UNIQUE(query, url)
                 )
             """)
-    
+    #Сохранение вакансий в таблице vacancies
     def save_vacancies(self, query: str, vacancies: List[Dict]):
         with self.conn:
             for vac in vacancies:
@@ -45,7 +47,7 @@ class Database:
                     vac.get('description', ''),
                     datetime.now()
                 ))
-    
+    #Получние кэшированных вакансий
     def get_cached_vacancies(self, query: str) -> List[Dict]:
         cursor = self.conn.execute(
             "SELECT * FROM vacancies WHERE query = ? ORDER BY parsed_at DESC",
@@ -55,5 +57,6 @@ class Database:
         columns = [description[0] for description in cursor.description]
         return [dict(zip(columns, row)) for row in rows]
     
+    #Закрытие соединения с БД
     def close(self):
         self.conn.close()
